@@ -3,24 +3,25 @@ LPE exploit for 4.20rc1-rc4.
 For educational/research purposes only. Use at your own risk.
 ## Analysis
 syscall: int bpf(int cmd, union bpf_attr *attr, unsigned int size);
-### 编译参数
+### kernel compilation
 	开启下列参数：
 		1. CONFIG_BPF
 		2. CONFIG_BPF_SYSCALL
 		3. CONFIG_DEBUG_INFO
 ### exploit
-#### 漏洞触发路径
+#### triggered vul path
 a. 漏洞触发路径：bpf -> map_create -> find_and_alloc_map -> queue_stack_map_alloc。
-#### 触发漏洞的条件
+#### triggered vul condition
 b. 达到漏洞函数的条件。
 ```
 	1. 设置 attr->map_type 为 22。
 	2. 通过 map_alloc_check 的检查。
 	3. attr->map_ifindex 为空。
 ```
-#### 漏洞位置
-c. 漏洞函数 queue_stack_map_alloc 的漏洞：整数溢出 -> 分配堆空间。
-size变量存在整数溢出。这个size在正常情况下应该是：struct bpf_queue_stac 的大小加上 value_size * size 相当于是map中每一项的大小（value_size）乘项数+1（attr->max_entries + 1）。另外，elements后面是数据区域。
+#### vul loc
+c. 漏洞函数 queue_stack_map_alloc 的漏洞：整数溢出 -> 分配堆空间。  
+size变量存在整数溢出。这个size在正常情况下应该是：struct bpf_queue_stac 的大小加上 value_size * size 相当于是map中每一项的大小（value_size）乘项数+1（attr->max_entries + 1）。  
+另外，elements后面是数据区域。
 ```
 struct bpf_queue_stack {
     struct bpf_map map;
@@ -102,12 +103,12 @@ bpf_map* queue_stack_map_alloc{
   return &qs->map;
 }
 ```
-最后从 find_and_alloc_map(attr) 中返回我们的map（struct bpf_map *）。
----->
-由于整数溢出，导致只分配了struct bpf_queue_stack 的空间，而没有分配map对应的空间。（个人理解这个bpf_queue_stack类似报文头部（负责管理的），而map对应的空间类似payload（elements数据）），但是map->max_entries = attr->max_entries。
+最后从 find_and_alloc_map(attr) 中返回我们的map（struct bpf_map *）。  
+---->  
+由于整数溢出，导致只分配了struct bpf_queue_stack 的空间，而没有分配map对应的空间。（个人理解这个bpf_queue_stack类似报文头部（负责管理的），而map对应的空间类似payload（elements数据）），但是map->max_entries = attr->max_entries。  
 #### 堆溢出
-e. 接下来，我们需要找到一块可以造成堆溢出的位置。我们将视角移出 map_create 函数。然而在BPF_MAP_UPDATE_ELEM 分支中我们对此对象进行更新等操作。	
-触发路径：bpf -> map_update_elem -> queue_stack_map_push_elem.
+e. 接下来，我们需要找到一块可以造成堆溢出的位置。我们将视角移出 map_create 函数。然而在BPF_MAP_UPDATE_ELEM 分支中我们对此对象进行更新等操作。  	
+触发路径：bpf -> map_update_elem -> queue_stack_map_push_elem.  
 ```
 queue_stack_map_push_elem(struct bpf_map *map, void *value,
                      u64 flags){
@@ -117,8 +118,8 @@ queue_stack_map_push_elem(struct bpf_map *map, void *value,
 ......
 }
 ```
-所以，对于0x100大小的map header+map payload, 即struct bpf_queue_stack，如果我们要拷贝的大小（value_size）大于（0x100- sizeof(bpf_map) - 0x10）的大小，就会造成堆溢出，而value_size由输入参数 attr 控制，从而能覆盖到下一个created map的bpf_map_ops虚表。
-#### 漏洞利用
+所以，对于0x100大小的map header+map payload, 即struct bpf_queue_stack，如果我们要拷贝的大小（value_size）大于（0x100- sizeof(bpf_map) - 0x10）的大小，就会造成堆溢出，而value_size由输入参数 attr 控制，从而能覆盖到下一个created map的bpf_map_ops虚表。  
+#### vul exploitation
 f. 漏洞利用
 ```
 struct bpf_queue_stack {
