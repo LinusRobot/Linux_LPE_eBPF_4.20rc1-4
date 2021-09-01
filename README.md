@@ -1,6 +1,6 @@
 # Linux_LPE_eBPF_4.20rc1-4
-LPE exploit for 4.20rc1-rc4.
-For educational/research purposes only. Use at your own risk.
+LPE exploit for 4.20rc1-rc4.  
+For educational/research purposes only. Use at your own risk.  
 ## Analysis
 syscall: int bpf(int cmd, union bpf_attr *attr, unsigned int size);
 ### kernel compilation
@@ -9,10 +9,10 @@ syscall: int bpf(int cmd, union bpf_attr *attr, unsigned int size);
 		2. CONFIG_BPF_SYSCALL
 		3. CONFIG_DEBUG_INFO
 ### exploit
-#### triggered vul path
-a. 漏洞触发路径：bpf -> map_create -> find_and_alloc_map -> queue_stack_map_alloc。
+#### triggered vul path  
+a. 漏洞触发路径：bpf -> map_create -> find_and_alloc_map -> queue_stack_map_alloc。  
 #### triggered vul condition
-b. 达到漏洞函数的条件。
+b. 达到漏洞函数的条件。  
 ```
 	1. 设置 attr->map_type 为 22。
 	2. 通过 map_alloc_check 的检查。
@@ -150,17 +150,21 @@ struct bpf_map {
 
 但是这样是没法bypass smap的，因为ret指令涉及到向用户态取数据。
 
+##### bypass kpti
+使用kernel rop和swapgs_restore_regs_and_return_to_usermode绕过kpti。  
+1. kernel rop用于提权。  
+2. swapgs_restore_regs_and_return_to_usermode 安全切换到用户态。  
+
 ## Todo
 ### bypass smap
 ### bypass kaslr
-### bypass kpti
 
 ## Usage
-Build for 4.20rc1-rc4.
+Build for 4.20rc1-rc4.  
 ```
 $ make
 ```
-To run:
+To run:  
 由于当前版本没绕过kaslr，需要手动修改exp的gadget地址以匹配你的内核。
 ```
 # id
