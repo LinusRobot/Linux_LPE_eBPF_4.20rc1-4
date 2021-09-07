@@ -157,6 +157,10 @@ struct bpf_map {
 
 ## Todo
 ### bypass smap
+使用ret2dir绕过smap保护机制。
+	1. 未找到类似`xchg rsp, reg`的指令，所以不能将内核栈迁移到`PHYSMAP`区域。
+	2. 采用shellcode的方式，真正执行的时候发现`PHYSMAP`区域不可执行。
+等过一阵子，有时间再探索吧。。
 ### bypass kaslr
 
 ## Usage

